@@ -9,7 +9,7 @@ int main()
     double sigma = 1;                                                                 // Valor ajustable
     image = g.gaussianFilter(image, width, height, sigma);                            // Aplica filtro gaussiano
     // Guardar imagen
-    stb.imwrite("image.jpg", image, width, height);
+    stb.imwrite("imageGas.jpg", image, width, height);
     // Liberar puntero
     u.free_memory(image, height);
 }

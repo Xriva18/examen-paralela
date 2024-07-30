@@ -5,8 +5,8 @@ int main()
     StbImageImplementation stb;
     HistogramHandler h; // instancia a la clase histograma
     int width, height;
-    double **image = stb.imread("/home/xriva20/Imágenes/prueba2.jpg", width, height); // Lectura de imagen
-    int **histeq = h.histeq(image, width, height);                                    // equaliza el histograma de la imagen
+    double **image = stb.imread("/home/xriva20/Documentos/Proyectogit/ImagenesParalela/prueba2.jpg", width, height); // Lectura de imagen
+    int **histeq = h.histeq(image, width, height);                                                                   // equaliza el histograma de la imagen
     // Guardar imagen
     stb.imwrite("image.jpg", histeq, width, height);
     // Liberar puntero
