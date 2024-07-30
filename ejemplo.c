@@ -2,4 +2,6 @@
 //  otro commit 2
 // commit 3
 // commit desde el terminal
-// archivo particular
+// archivo particular\
+
+. /// se mdofico
