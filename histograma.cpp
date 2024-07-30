@@ -8,7 +8,7 @@ int main()
     double **image = stb.imread("/home/xriva20/Documentos/Proyectogit/ImagenesParalela/prueba2.jpg", width, height); // Lectura de imagen
     int **histeq = h.histeq(image, width, height);                                                                   // equaliza el histograma de la imagen
     // Guardar imagen
-    stb.imwrite("image.jpg", histeq, width, height);
+    stb.imwrite("imagehis.jpg", histeq, width, height);
     // Liberar puntero
     u.free_memory(histeq, height);
 }
