@@ -1,4 +1,5 @@
 #include <vector>
+#include <omp.h>
 class HistogramHandler
 {
 private:
@@ -11,13 +12,16 @@ public:
 std::vector<int> HistogramHandler::imhist(double **image, int width, int height)
 {
     std::vector<int> hist(256, 0);
+#pragma omp parallel for collapse(2) shared(hist, image)
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
+#pragma omp atomic
             hist[image[i][j]]++;
         }
     }
+
     return hist;
 }
 
@@ -30,12 +34,29 @@ int **HistogramHandler::histeq(double **image, int width, int height)
     double sumCDF = 0;
 
     printf("%f", static_cast<double>(histogram[0]) / static_cast<double>(pixels));
-    for (int i = 0; i < 256; i++)
+
+#pragma omp parallel
     {
-        sumCDF = sumCDF + static_cast<double>(histogram[i]) / static_cast<double>(pixels);
-        cdf[i] = sumCDF * 255.0;
+        double sumCDF_local = 0.0;
+
+#pragma omp for
+        for (int i = 0; i < 256; i++)
+        {
+            sumCDF_local = sumCDF_local + static_cast<double>(histogram[i]) / static_cast<double>(pixels);
+            cdf[i] = sumCDF_local * 255.0;
+        }
+
+#pragma omp critical
+        {
+            for (int i = 0; i < 256; i++)
+            {
+                sumCDF += static_cast<double>(histogram[i]) / static_cast<double>(pixels);
+                cdf[i] = sumCDF * 255.0;
+            }
+        }
     }
 
+#pragma omp parallel for collapse(2) shared(imageEq, image, cdf)
     for (size_t i = 0; i < height; i++)
     {
         for (size_t j = 0; j < width; j++)
