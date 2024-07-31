@@ -119,61 +119,63 @@ public:
      * @param matrix Matriz de datos.
      * @param width Numero de columnas
      * @param height Numero de filas
-    */
-    double getMaxValue(double ** matrix, int width, int height);
+     */
+    double getMaxValue(double **matrix, int width, int height);
     /**
      * @brief Transforma una matriz de tipo int** a double**
      * @param matrix Matriz de datos
      * @param width NUmero de columnas
      * @param heigt NUmero de filas
-    */
-    double** int2double(int** matrix, int width, int height);
+     */
+    double **int2double(int **matrix, int width, int height);
     /**
      * @brief Transforma una matriz de tipo double** a int**
      * @param matrix Matriz de datos
      * @param width NUmero de columnas
      * @param heigt NUmero de filas
-    */
-    int** double2int(double** matrix, int width, int height);
+     */
+    int **double2int(double **matrix, int width, int height);
 };
 
-double** Utility::int2double(int** matrix, int width, int height){
-    double** newMatrix=initMatrix(width,height,0.0);
-    for(int i=0;i<height; i++){
+double **Utility::int2double(int **matrix, int width, int height)
+{
+    double **newMatrix = initMatrix(width, height, 0.0);
+    for (int i = 0; i < height; i++)
+    {
         for (size_t j = 0; j < width; j++)
         {
-            newMatrix[i][j]=static_cast<double>(matrix[i][j]);
+            newMatrix[i][j] = static_cast<double>(matrix[i][j]);
         }
     }
-    free_memory(matrix,height);
+    free_memory(matrix, height);
     return newMatrix;
 }
 
-int** Utility::double2int(double** matrix, int width, int height){
-    int** newMatrix=initMatrix(width,height,0);
-    for(int i=0;i<height; i++){
+int **Utility::double2int(double **matrix, int width, int height)
+{
+    int **newMatrix = initMatrix(width, height, 0);
+    for (int i = 0; i < height; i++)
+    {
         for (size_t j = 0; j < width; j++)
         {
-            newMatrix[i][j]=static_cast<int>(matrix[i][j]);
+            newMatrix[i][j] = static_cast<int>(matrix[i][j]);
         }
     }
-    free_memory(matrix,height);
+    free_memory(matrix, height);
     return newMatrix;
 }
 
-
-double Utility::getMaxValue(double **matrix, int width, int height){
-    double maxvalue=matrix[0][0];
+double Utility::getMaxValue(double **matrix, int width, int height)
+{
+    double maxvalue = matrix[0][0];
     for (size_t i = 0; i < height; i++)
     {
         for (size_t j = 0; j < width; j++)
         {
-            maxvalue=matrix[i][j]>maxvalue?matrix[i][j]:maxvalue;
+            maxvalue = matrix[i][j] > maxvalue ? matrix[i][j] : maxvalue;
         }
-        
     }
     return maxvalue;
-    
 }
 
 void Utility::writeMatrix(const char *filePath, double **matrix, int width, int height)
@@ -308,19 +310,18 @@ double **Utility::initMatrix(int width, int height, double value)
     return matrix;
 }
 
-unsigned char** Utility::initMatrix(int width, int height, char value){
-    unsigned char** matrix=new unsigned char*[height];
+unsigned char **Utility::initMatrix(int width, int height, char value)
+{
+    unsigned char **matrix = new unsigned char *[height];
     for (size_t i = 0; i < height; i++)
     {
-        matrix[i]=new unsigned char[width];
+        matrix[i] = new unsigned char[width];
         for (size_t j = 0; j < width; j++)
         {
-            matrix[i][j]=value;
+            matrix[i][j] = value;
         }
-        
     }
     return matrix;
-    
 }
 
 void Utility::free_memory(int **matrix, int height)
