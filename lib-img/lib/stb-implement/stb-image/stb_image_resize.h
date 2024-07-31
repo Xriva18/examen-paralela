@@ -1363,6 +1363,8 @@ static void stbir__calculate_coefficients_upsample(stbir_filter filter, float sc
 
     STBIR_ASSERT(contributor->n1 >= contributor->n0);
 
+#pragma omp parallel for
+#pragma omp parallel for
     for (i = 0; i <= in_last_pixel - in_first_pixel; i++)
     {
         float in_pixel_center = (float)(i + in_first_pixel) + 0.5f;
@@ -1387,9 +1389,12 @@ static void stbir__calculate_coefficients_upsample(stbir_filter filter, float sc
     // Make sure the sum of all coefficients is 1.
     filter_scale = 1 / total_filter;
 
+#pragma omp parallel for
+#pragma omp parallel for
     for (i = 0; i <= in_last_pixel - in_first_pixel; i++)
         coefficient_group[i] *= filter_scale;
 
+#pragma omp parallel for
     for (i = in_last_pixel - in_first_pixel; i >= 0; i--)
     {
         if (coefficient_group[i])
@@ -1411,6 +1416,7 @@ static void stbir__calculate_coefficients_downsample(stbir_filter filter, float 
 
     STBIR_ASSERT(contributor->n1 >= contributor->n0);
 
+#pragma omp parallel for
     for (i = 0; i <= out_last_pixel - out_first_pixel; i++)
     {
         float out_pixel_center = (float)(i + out_first_pixel) + 0.5f;
@@ -1420,6 +1426,7 @@ static void stbir__calculate_coefficients_downsample(stbir_filter filter, float 
 
     STBIR_ASSERT(stbir__filter_info_table[filter].kernel((float)(out_last_pixel + 1) + 0.5f - out_center_of_in, scale_ratio) == 0);
 
+#pragma omp parallel for
     for (i = out_last_pixel - out_first_pixel; i >= 0; i--)
     {
         if (coefficient_group[i])
@@ -1437,11 +1444,15 @@ static void stbir__normalize_downsample_coefficients(stbir__contributors *contri
     int i, j;
     int skip;
 
+#pragma omp parallel for
     for (i = 0; i < output_size; i++)
     {
         float scale;
         float total = 0;
 
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (j = 0; j < num_contributors; j++)
         {
             if (i >= contributors[j].n0 && i <= contributors[j].n1)
@@ -1458,6 +1469,9 @@ static void stbir__normalize_downsample_coefficients(stbir__contributors *contri
 
         scale = 1 / total;
 
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (j = 0; j < num_contributors; j++)
         {
             if (i >= contributors[j].n0 && i <= contributors[j].n1)
@@ -1467,8 +1481,11 @@ static void stbir__normalize_downsample_coefficients(stbir__contributors *contri
         }
     }
 
-    // Optimize: Skip zero coefficients and contributions outside of image bounds.
-    // Do this after normalizing because normalization depends on the n0/n1 values.
+// Optimize: Skip zero coefficients and contributions outside of image bounds.
+// Do this after normalizing because normalization depends on the n0/n1 values.
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
     for (j = 0; j < num_contributors; j++)
     {
         int range, max, width;
@@ -1489,6 +1506,7 @@ static void stbir__normalize_downsample_coefficients(stbir__contributors *contri
         max = stbir__min(num_coefficients, range);
 
         width = stbir__get_coefficient_width(filter, scale_ratio);
+#pragma omp parallel for
         for (i = 0; i < max; i++)
         {
             if (i + skip >= width)
@@ -1500,7 +1518,8 @@ static void stbir__normalize_downsample_coefficients(stbir__contributors *contri
         continue;
     }
 
-    // Using min to avoid writing into invalid pixels.
+// Using min to avoid writing into invalid pixels.
+#pragma omp parallel for
     for (i = 0; i < num_contributors; i++)
         contributors[i].n1 = stbir__min(contributors[i].n1, output_size - 1);
 }
@@ -1516,7 +1535,9 @@ static void stbir__calculate_filters(stbir__contributors *contributors, float *c
     {
         float out_pixels_radius = stbir__filter_info_table[filter].support(1 / scale_ratio) * scale_ratio;
 
-        // Looping through out pixels
+// Looping through out pixels
+#pragma omp parallel for
+#pragma omp parallel for
         for (n = 0; n < total_contributors; n++)
         {
             float in_center_of_out; // Center of the current out pixel in the in pixel space
@@ -1531,7 +1552,9 @@ static void stbir__calculate_filters(stbir__contributors *contributors, float *c
     {
         float in_pixels_radius = stbir__filter_info_table[filter].support(scale_ratio) / scale_ratio;
 
-        // Looping through in pixels
+// Looping through in pixels
+#pragma omp parallel for
+#pragma omp parallel for
         for (n = 0; n < total_contributors; n++)
         {
             float out_center_of_in; // Center of the current out pixel in the in pixel space
@@ -1579,7 +1602,28 @@ static void stbir__decode_scanline(stbir__info *stbir_info, int n)
     // and we want to avoid paying overhead on every pixel if not STBIR_EDGE_ZERO
     if (edge_vertical == STBIR_EDGE_ZERO && (n < 0 || n >= stbir_info->input_h))
     {
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (; x < max_x; x++)
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[x * channels + c] = 0;
         return;
@@ -1588,20 +1632,62 @@ static void stbir__decode_scanline(stbir__info *stbir_info, int n)
     switch (decode)
     {
     case STBIR__DECODE(STBIR_TYPE_UINT8, STBIR_COLORSPACE_LINEAR):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (; x < max_x; x++)
         {
             int decode_pixel_index = x * channels;
             int input_pixel_index = stbir__edge_wrap(edge_horizontal, x, input_w) * channels;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[decode_pixel_index + c] = ((float)((const unsigned char *)input_data)[input_pixel_index + c]) / stbir__max_uint8_as_float;
         }
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT8, STBIR_COLORSPACE_SRGB):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (; x < max_x; x++)
         {
             int decode_pixel_index = x * channels;
             int input_pixel_index = stbir__edge_wrap(edge_horizontal, x, input_w) * channels;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[decode_pixel_index + c] = stbir__srgb_uchar_to_linear_float[((const unsigned char *)input_data)[input_pixel_index + c]];
 
@@ -1611,20 +1697,62 @@ static void stbir__decode_scanline(stbir__info *stbir_info, int n)
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT16, STBIR_COLORSPACE_LINEAR):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (; x < max_x; x++)
         {
             int decode_pixel_index = x * channels;
             int input_pixel_index = stbir__edge_wrap(edge_horizontal, x, input_w) * channels;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[decode_pixel_index + c] = ((float)((const unsigned short *)input_data)[input_pixel_index + c]) / stbir__max_uint16_as_float;
         }
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT16, STBIR_COLORSPACE_SRGB):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (; x < max_x; x++)
         {
             int decode_pixel_index = x * channels;
             int input_pixel_index = stbir__edge_wrap(edge_horizontal, x, input_w) * channels;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[decode_pixel_index + c] = stbir__srgb_to_linear(((float)((const unsigned short *)input_data)[input_pixel_index + c]) / stbir__max_uint16_as_float);
 
@@ -1634,20 +1762,62 @@ static void stbir__decode_scanline(stbir__info *stbir_info, int n)
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT32, STBIR_COLORSPACE_LINEAR):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (; x < max_x; x++)
         {
             int decode_pixel_index = x * channels;
             int input_pixel_index = stbir__edge_wrap(edge_horizontal, x, input_w) * channels;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[decode_pixel_index + c] = (float)(((double)((const unsigned int *)input_data)[input_pixel_index + c]) / stbir__max_uint32_as_float);
         }
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT32, STBIR_COLORSPACE_SRGB):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (; x < max_x; x++)
         {
             int decode_pixel_index = x * channels;
             int input_pixel_index = stbir__edge_wrap(edge_horizontal, x, input_w) * channels;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[decode_pixel_index + c] = stbir__srgb_to_linear((float)(((double)((const unsigned int *)input_data)[input_pixel_index + c]) / stbir__max_uint32_as_float));
 
@@ -1657,20 +1827,62 @@ static void stbir__decode_scanline(stbir__info *stbir_info, int n)
         break;
 
     case STBIR__DECODE(STBIR_TYPE_FLOAT, STBIR_COLORSPACE_LINEAR):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (; x < max_x; x++)
         {
             int decode_pixel_index = x * channels;
             int input_pixel_index = stbir__edge_wrap(edge_horizontal, x, input_w) * channels;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[decode_pixel_index + c] = ((const float *)input_data)[input_pixel_index + c];
         }
         break;
 
     case STBIR__DECODE(STBIR_TYPE_FLOAT, STBIR_COLORSPACE_SRGB):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (; x < max_x; x++)
         {
             int decode_pixel_index = x * channels;
             int input_pixel_index = stbir__edge_wrap(edge_horizontal, x, input_w) * channels;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[decode_pixel_index + c] = stbir__srgb_to_linear(((const float *)input_data)[input_pixel_index + c]);
 
@@ -1687,6 +1899,7 @@ static void stbir__decode_scanline(stbir__info *stbir_info, int n)
 
     if (!(stbir_info->flags & STBIR_FLAG_ALPHA_PREMULTIPLIED))
     {
+#pragma omp parallel for
         for (x = -stbir_info->horizontal_filter_pixel_margin; x < max_x; x++)
         {
             int decode_pixel_index = x * channels;
@@ -1700,6 +1913,19 @@ static void stbir__decode_scanline(stbir__info *stbir_info, int n)
                 decode_buffer[decode_pixel_index + alpha_channel] = alpha;
             }
 #endif
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
             {
                 if (c == alpha_channel)
@@ -1712,13 +1938,41 @@ static void stbir__decode_scanline(stbir__info *stbir_info, int n)
 
     if (edge_horizontal == STBIR_EDGE_ZERO)
     {
+#pragma omp parallel for
         for (x = -stbir_info->horizontal_filter_pixel_margin; x < 0; x++)
         {
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[x * channels + c] = 0;
         }
+#pragma omp parallel for
         for (x = input_w; x < max_x; x++)
         {
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (c = 0; c < channels; c++)
                 decode_buffer[x * channels + c] = 0;
         }
@@ -1764,6 +2018,7 @@ static void stbir__resample_horizontal_upsample(stbir__info *stbir_info, float *
     float *horizontal_coefficients = stbir_info->horizontal_coefficients;
     int coefficient_width = stbir_info->horizontal_coefficient_width;
 
+#pragma omp parallel for
     for (x = 0; x < output_w; x++)
     {
         int n0 = horizontal_contributors[x].n0;
@@ -1782,6 +2037,11 @@ static void stbir__resample_horizontal_upsample(stbir__info *stbir_info, float *
         switch (channels)
         {
         case 1:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= n1; k++)
             {
                 int in_pixel_index = k * 1;
@@ -1791,6 +2051,11 @@ static void stbir__resample_horizontal_upsample(stbir__info *stbir_info, float *
             }
             break;
         case 2:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= n1; k++)
             {
                 int in_pixel_index = k * 2;
@@ -1801,6 +2066,11 @@ static void stbir__resample_horizontal_upsample(stbir__info *stbir_info, float *
             }
             break;
         case 3:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= n1; k++)
             {
                 int in_pixel_index = k * 3;
@@ -1812,6 +2082,11 @@ static void stbir__resample_horizontal_upsample(stbir__info *stbir_info, float *
             }
             break;
         case 4:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= n1; k++)
             {
                 int in_pixel_index = k * 4;
@@ -1824,12 +2099,30 @@ static void stbir__resample_horizontal_upsample(stbir__info *stbir_info, float *
             }
             break;
         default:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= n1; k++)
             {
                 int in_pixel_index = k * channels;
                 float coefficient = horizontal_coefficients[coefficient_group + coefficient_counter++];
                 int c;
                 STBIR_ASSERT(coefficient != 0);
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
                 for (c = 0; c < channels; c++)
                     output_buffer[out_pixel_index + c] += decode_buffer[in_pixel_index + c] * coefficient;
             }
@@ -1855,6 +2148,11 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
     switch (channels)
     {
     case 1:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < max_x; x++)
         {
             int n0 = horizontal_contributors[x].n0;
@@ -1865,6 +2163,11 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
             int max_n = n1;
             int coefficient_group = coefficient_width * x;
 
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= max_n; k++)
             {
                 int out_pixel_index = k * 1;
@@ -1876,6 +2179,11 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
         break;
 
     case 2:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < max_x; x++)
         {
             int n0 = horizontal_contributors[x].n0;
@@ -1886,6 +2194,11 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
             int max_n = n1;
             int coefficient_group = coefficient_width * x;
 
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= max_n; k++)
             {
                 int out_pixel_index = k * 2;
@@ -1898,6 +2211,11 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
         break;
 
     case 3:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < max_x; x++)
         {
             int n0 = horizontal_contributors[x].n0;
@@ -1908,6 +2226,11 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
             int max_n = n1;
             int coefficient_group = coefficient_width * x;
 
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= max_n; k++)
             {
                 int out_pixel_index = k * 3;
@@ -1921,6 +2244,11 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
         break;
 
     case 4:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < max_x; x++)
         {
             int n0 = horizontal_contributors[x].n0;
@@ -1931,6 +2259,11 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
             int max_n = n1;
             int coefficient_group = coefficient_width * x;
 
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= max_n; k++)
             {
                 int out_pixel_index = k * 4;
@@ -1945,6 +2278,11 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
         break;
 
     default:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < max_x; x++)
         {
             int n0 = horizontal_contributors[x].n0;
@@ -1955,12 +2293,30 @@ static void stbir__resample_horizontal_downsample(stbir__info *stbir_info, float
             int max_n = n1;
             int coefficient_group = coefficient_width * x;
 
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (k = n0; k <= max_n; k++)
             {
                 int c;
                 int out_pixel_index = k * channels;
                 float coefficient = horizontal_coefficients[coefficient_group + k - n0];
                 STBIR_ASSERT(coefficient != 0);
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
                 for (c = 0; c < channels; c++)
                     output_buffer[out_pixel_index + c] += decode_buffer[in_pixel_index + c] * coefficient;
             }
@@ -2015,6 +2371,15 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
 
     if (!(stbir_info->flags & STBIR_FLAG_ALPHA_PREMULTIPLIED))
     {
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < num_pixels; ++x)
         {
             int pixel_index = x * channels;
@@ -2034,8 +2399,9 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
         }
     }
 
-    // build a table of all channels that need colorspace correction, so
-    // we don't perform colorspace correction on channels that don't need it.
+// build a table of all channels that need colorspace correction, so
+// we don't perform colorspace correction on channels that don't need it.
+#pragma omp parallel for
     for (x = 0, num_nonalpha = 0; x < channels; ++x)
     {
         if (x != alpha_channel || (stbir_info->flags & STBIR_FLAG_ALPHA_USES_COLORSPACE))
@@ -2058,6 +2424,15 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
     switch (decode)
     {
     case STBIR__DECODE(STBIR_TYPE_UINT8, STBIR_COLORSPACE_LINEAR):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < num_pixels; ++x)
         {
             int pixel_index = x * channels;
@@ -2071,6 +2446,15 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT8, STBIR_COLORSPACE_SRGB):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < num_pixels; ++x)
         {
             int pixel_index = x * channels;
@@ -2087,6 +2471,15 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT16, STBIR_COLORSPACE_LINEAR):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < num_pixels; ++x)
         {
             int pixel_index = x * channels;
@@ -2100,6 +2493,15 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT16, STBIR_COLORSPACE_SRGB):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < num_pixels; ++x)
         {
             int pixel_index = x * channels;
@@ -2117,6 +2519,15 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT32, STBIR_COLORSPACE_LINEAR):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < num_pixels; ++x)
         {
             int pixel_index = x * channels;
@@ -2130,6 +2541,15 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
         break;
 
     case STBIR__DECODE(STBIR_TYPE_UINT32, STBIR_COLORSPACE_SRGB):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < num_pixels; ++x)
         {
             int pixel_index = x * channels;
@@ -2146,6 +2566,15 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
         break;
 
     case STBIR__DECODE(STBIR_TYPE_FLOAT, STBIR_COLORSPACE_LINEAR):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < num_pixels; ++x)
         {
             int pixel_index = x * channels;
@@ -2159,6 +2588,15 @@ static void stbir__encode_scanline(stbir__info *stbir_info, int num_pixels, void
         break;
 
     case STBIR__DECODE(STBIR_TYPE_FLOAT, STBIR_COLORSPACE_SRGB):
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (x = 0; x < num_pixels; ++x)
         {
             int pixel_index = x * channels;
@@ -2222,11 +2660,21 @@ static void stbir__resample_vertical_upsample(stbir__info *stbir_info, int n)
     switch (channels)
     {
     case 1:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (k = n0; k <= n1; k++)
         {
             int coefficient_index = coefficient_counter++;
             float *ring_buffer_entry = stbir__get_ring_buffer_scanline(k, ring_buffer, ring_buffer_begin_index, ring_buffer_first_scanline, ring_buffer_entries, ring_buffer_length);
             float coefficient = vertical_coefficients[coefficient_group + coefficient_index];
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (x = 0; x < output_w; ++x)
             {
                 int in_pixel_index = x * 1;
@@ -2235,11 +2683,21 @@ static void stbir__resample_vertical_upsample(stbir__info *stbir_info, int n)
         }
         break;
     case 2:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (k = n0; k <= n1; k++)
         {
             int coefficient_index = coefficient_counter++;
             float *ring_buffer_entry = stbir__get_ring_buffer_scanline(k, ring_buffer, ring_buffer_begin_index, ring_buffer_first_scanline, ring_buffer_entries, ring_buffer_length);
             float coefficient = vertical_coefficients[coefficient_group + coefficient_index];
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (x = 0; x < output_w; ++x)
             {
                 int in_pixel_index = x * 2;
@@ -2249,11 +2707,21 @@ static void stbir__resample_vertical_upsample(stbir__info *stbir_info, int n)
         }
         break;
     case 3:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (k = n0; k <= n1; k++)
         {
             int coefficient_index = coefficient_counter++;
             float *ring_buffer_entry = stbir__get_ring_buffer_scanline(k, ring_buffer, ring_buffer_begin_index, ring_buffer_first_scanline, ring_buffer_entries, ring_buffer_length);
             float coefficient = vertical_coefficients[coefficient_group + coefficient_index];
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (x = 0; x < output_w; ++x)
             {
                 int in_pixel_index = x * 3;
@@ -2264,11 +2732,21 @@ static void stbir__resample_vertical_upsample(stbir__info *stbir_info, int n)
         }
         break;
     case 4:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (k = n0; k <= n1; k++)
         {
             int coefficient_index = coefficient_counter++;
             float *ring_buffer_entry = stbir__get_ring_buffer_scanline(k, ring_buffer, ring_buffer_begin_index, ring_buffer_first_scanline, ring_buffer_entries, ring_buffer_length);
             float coefficient = vertical_coefficients[coefficient_group + coefficient_index];
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (x = 0; x < output_w; ++x)
             {
                 int in_pixel_index = x * 4;
@@ -2280,15 +2758,38 @@ static void stbir__resample_vertical_upsample(stbir__info *stbir_info, int n)
         }
         break;
     default:
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
         for (k = n0; k <= n1; k++)
         {
             int coefficient_index = coefficient_counter++;
             float *ring_buffer_entry = stbir__get_ring_buffer_scanline(k, ring_buffer, ring_buffer_begin_index, ring_buffer_first_scanline, ring_buffer_entries, ring_buffer_length);
             float coefficient = vertical_coefficients[coefficient_group + coefficient_index];
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
             for (x = 0; x < output_w; ++x)
             {
                 int in_pixel_index = x * channels;
                 int c;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
                 for (c = 0; c < channels; c++)
                     encode_buffer[in_pixel_index + c] += ring_buffer_entry[in_pixel_index + c] * coefficient;
             }
@@ -2321,6 +2822,11 @@ static void stbir__resample_vertical_downsample(stbir__info *stbir_info, int n)
 
     STBIR_ASSERT(!stbir__use_height_upsampling(stbir_info));
 
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
     for (k = n0; k <= n1; k++)
     {
         int coefficient_index = k - n0;
@@ -2332,6 +2838,7 @@ static void stbir__resample_vertical_downsample(stbir__info *stbir_info, int n)
         switch (channels)
         {
         case 1:
+#pragma omp parallel for
             for (x = 0; x < output_w; x++)
             {
                 int in_pixel_index = x * 1;
@@ -2339,6 +2846,7 @@ static void stbir__resample_vertical_downsample(stbir__info *stbir_info, int n)
             }
             break;
         case 2:
+#pragma omp parallel for
             for (x = 0; x < output_w; x++)
             {
                 int in_pixel_index = x * 2;
@@ -2347,6 +2855,7 @@ static void stbir__resample_vertical_downsample(stbir__info *stbir_info, int n)
             }
             break;
         case 3:
+#pragma omp parallel for
             for (x = 0; x < output_w; x++)
             {
                 int in_pixel_index = x * 3;
@@ -2356,6 +2865,7 @@ static void stbir__resample_vertical_downsample(stbir__info *stbir_info, int n)
             }
             break;
         case 4:
+#pragma omp parallel for
             for (x = 0; x < output_w; x++)
             {
                 int in_pixel_index = x * 4;
@@ -2366,11 +2876,25 @@ static void stbir__resample_vertical_downsample(stbir__info *stbir_info, int n)
             }
             break;
         default:
+#pragma omp parallel for
             for (x = 0; x < output_w; x++)
             {
                 int in_pixel_index = x * channels;
 
                 int c;
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
+#pragma omp parallel for
                 for (c = 0; c < channels; c++)
                     ring_buffer_entry[in_pixel_index + c] += horizontal_buffer[in_pixel_index + c] * coefficient;
             }
