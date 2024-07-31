@@ -1,4 +1,5 @@
 #include "./stb-image/stb_image.h"
+#include <omp.h>
 extern "C"
 {
 #define STB_IMAGE_IMPLEMENTATION
@@ -84,6 +85,7 @@ double **StbImageImplementation::stroke(double **image, int &width, int &height,
 {
     stb_image stroke = u.initMatrix(width - (2 * x), height - (2 * y), 0.0);
 
+#pragma omp parallel for
     for (int i = y; i < height - y; i++)
     {
         for (size_t j = x; j < width - x; j++)
@@ -91,6 +93,7 @@ double **StbImageImplementation::stroke(double **image, int &width, int &height,
             stroke[i - y][j - x] = image[i][j];
         }
     }
+
     u.free_memory(image, height);
     width = width - (2 * x);
     height = height - (2 * y);
@@ -102,12 +105,13 @@ double **StbImageImplementation::imresize(double **image, int width, int height,
     float *img = new float[width * height];
     float *resize = new float[newWidth * newHeight];
     int cont = 0;
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
+            int cont = i * width + j;
             img[cont] = float(image[i][j]);
-            cont++;
         }
     }
 
@@ -127,12 +131,13 @@ stb_image StbImageImplementation::imread(const char *absolutPath, int &width, in
     unsigned char *data = stbi_load(absolutPath, &width, &height, &n, 1);
     stb_image img = u.initMatrix(width, height, 0.0);
     int cont = 0;
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
+            int cont = i * width + j;
             *(*(img + i) + j) = double(*(data + cont));
-            cont++;
         }
     }
 
@@ -147,12 +152,13 @@ unsigned char **StbImageImplementation::imread2d(const char *absolutpath, int &w
     unsigned char *data = stbi_load(absolutpath, &width, &height, &n, 1);
     unsigned char **image = u.initMatrix(width, height, '0');
     int cont = 0;
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
+            int cont = i * width + j;
             *(*(image + i) + j) = (*(data + cont));
-            cont++;
         }
     }
 
@@ -171,14 +177,14 @@ stb_image StbImageImplementation::imread(const char *absolutPath, int &width, in
     unsigned char *data = stbi_load(absolutPath, &width, &height, &n, 1);
     stb_image img = this->u.initMatrix(width, height, 0.0);
     int cont = 0;
-    // printf("Imagen cargada, canales: %d\t, size %d x %d",n, width, height);
+// printf("Imagen cargada, canales: %d\t, size %d x %d",n, width, height);
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
+            int cont = i * width + j;
             *(*(img + i) + j) = double(*(data + cont));
-
-            cont++;
         }
     }
 
@@ -193,14 +199,16 @@ void StbImageImplementation::imwrite(const char *absolutePath, stb_image image, 
 {
     char *img = new char[width * height];
     int index = 0;
+#pragma omp parallel for collapse(2)
     for (short int i = 0; i < height; i++)
     {
         for (short int j = 0; j < width; j++)
         {
+            int index = i * width + j;
             img[index] = (uint8_t)(image[i][j]);
-            index++;
         }
     }
+
     stbi_write_jpg(absolutePath, width, height, 1, img, 100);
     delete[] img;
 }
@@ -209,14 +217,16 @@ void StbImageImplementation::imwrite(const char *absolutePath, int **image, int 
 {
     char *img = new char[width * height];
     int index = 0;
+#pragma omp parallel for collapse(2)
     for (short int i = 0; i < height; i++)
     {
         for (short int j = 0; j < width; j++)
         {
+            int index = i * width + j;
             img[index] = image[i][j] > 1 ? (uint8_t)image[i][j] : static_cast<unsigned char>(image[i][j] * 255);
-            index++;
         }
     }
+
     stbi_write_jpg(absolutePath, width, height, 1, img, 100);
     delete[] img;
 }
@@ -225,14 +235,16 @@ void StbImageImplementation::imwrite(const char *absolutePath, unsigned char **i
 {
     char *img = new char[width * height];
     int index = 0;
+#pragma omp parallel for collapse(2)
     for (short int i = 0; i < height; i++)
     {
         for (short int j = 0; j < width; j++)
         {
+            int index = i * width + j;
             img[index] = image[i][j];
-            index++;
         }
     }
+
     stbi_write_jpg(absolutePath, width, height, 1, img, 100);
     delete[] img;
 }
