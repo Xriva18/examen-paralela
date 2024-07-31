@@ -315,6 +315,8 @@ RECENT REVISION HISTORY:
 //     want the zlib decoder to be available, #define STBI_SUPPORT_ZLIB
 //
 
+#include <omp.h>
+
 #ifndef STBI_NO_STDIO
 #include <stdio.h>
 #endif // STBI_NO_STDIO
@@ -1625,78 +1627,69 @@ static unsigned char *stbi__convert_format(unsigned char *data, int img_n, int r
       return stbi__errpuc("outofmem", "Out of memory");
    }
 
+#pragma omp parallel for private(j, i) collapse(2)
    for (j = 0; j < (int)y; ++j)
    {
-      unsigned char *src = data + j * x * img_n;
-      unsigned char *dest = good + j * x * req_comp;
-
-#define STBI__COMBO(a, b) ((a) * 8 + (b))
-#define STBI__CASE(a, b)   \
-   case STBI__COMBO(a, b): \
-      for (i = x - 1; i >= 0; --i, src += a, dest += b)
-      // convert source image with img_n components to one with req_comp components;
-      // avoid switch per pixel, so use switch per scanline and massive macros
-      switch (STBI__COMBO(img_n, req_comp))
+      for (i = 0; i < (int)x; ++i)
       {
-         STBI__CASE(1, 2)
+         unsigned char *src = data + (j * x + i) * img_n;
+         unsigned char *dest = good + (j * x + i) * req_comp;
+
+         switch (((img_n) * 8 + (req_comp)))
          {
+         case ((1) * 8 + (2)):
             dest[0] = src[0];
             dest[1] = 255;
-         }
-         break;
-         STBI__CASE(1, 3) { dest[0] = dest[1] = dest[2] = src[0]; }
-         break;
-         STBI__CASE(1, 4)
-         {
+            break;
+         case ((1) * 8 + (3)):
+            dest[0] = dest[1] = dest[2] = src[0];
+            break;
+         case ((1) * 8 + (4)):
             dest[0] = dest[1] = dest[2] = src[0];
             dest[3] = 255;
-         }
-         break;
-         STBI__CASE(2, 1) { dest[0] = src[0]; }
-         break;
-         STBI__CASE(2, 3) { dest[0] = dest[1] = dest[2] = src[0]; }
-         break;
-         STBI__CASE(2, 4)
-         {
+            break;
+         case ((2) * 8 + (1)):
+            dest[0] = src[0];
+            break;
+         case ((2) * 8 + (3)):
+            dest[0] = dest[1] = dest[2] = src[0];
+            break;
+         case ((2) * 8 + (4)):
             dest[0] = dest[1] = dest[2] = src[0];
             dest[3] = src[1];
-         }
-         break;
-         STBI__CASE(3, 4)
-         {
+            break;
+         case ((3) * 8 + (4)):
             dest[0] = src[0];
             dest[1] = src[1];
             dest[2] = src[2];
             dest[3] = 255;
-         }
-         break;
-         STBI__CASE(3, 1) { dest[0] = stbi__compute_y(src[0], src[1], src[2]); }
-         break;
-         STBI__CASE(3, 2)
-         {
+            break;
+         case ((3) * 8 + (1)):
+            dest[0] = stbi__compute_y(src[0], src[1], src[2]);
+            break;
+         case ((3) * 8 + (2)):
             dest[0] = stbi__compute_y(src[0], src[1], src[2]);
             dest[1] = 255;
-         }
-         break;
-         STBI__CASE(4, 1) { dest[0] = stbi__compute_y(src[0], src[1], src[2]); }
-         break;
-         STBI__CASE(4, 2)
-         {
+            break;
+         case ((4) * 8 + (1)):
+            dest[0] = stbi__compute_y(src[0], src[1], src[2]);
+            break;
+         case ((4) * 8 + (2)):
             dest[0] = stbi__compute_y(src[0], src[1], src[2]);
             dest[1] = src[3];
-         }
-         break;
-         STBI__CASE(4, 3)
-         {
+            break;
+         case ((4) * 8 + (3)):
             dest[0] = src[0];
             dest[1] = src[1];
             dest[2] = src[2];
+            break;
+         default:
+            STBI_ASSERT(0);
+            STBI_FREE(data);
+            STBI_FREE(good);
+            return stbi__errpuc("unsupported", "Unsupported format conversion");
          }
-         break;
-      default:
-         STBI_ASSERT(0);
       }
-#undef STBI__CASE
    }
 
    STBI_FREE(data);
@@ -2505,7 +2498,8 @@ static void stbi__idct_block(stbi_uc *out, int out_stride, short data[64])
    stbi_uc *o;
    short *d = data;
 
-   // columns
+// columns
+#pragma omp parallel for private(i)
    for (i = 0; i < 8; ++i, ++d, ++v)
    {
       // if all zeroes, shortcut -- this avoids dequantizing 0s and IDCTing
@@ -3847,18 +3841,23 @@ static stbi_uc *stbi__resample_row_generic(stbi_uc *out, stbi_uc *in_near, stbi_
    // resample with nearest-neighbor
    int i, j;
    STBI_NOTUSED(in_far);
+
+#pragma omp parallel for private(j)
    for (i = 0; i < w; ++i)
       for (j = 0; j < hs; ++j)
          out[i * hs + j] = in_near[i];
+
    return out;
 }
 
 // this is a reduced-precision calculation of YCbCr-to-RGB introduced
 // to make sure the code produces the same results in both SIMD and scalar
 #define stbi__float2fixed(x) (((int)((x) * 4096.0f + 0.5f)) << 8)
+
 static void stbi__YCbCr_to_RGB_row(stbi_uc *out, const stbi_uc *y, const stbi_uc *pcb, const stbi_uc *pcr, int count, int step)
 {
    int i;
+#pragma omp parallel for private(i)
    for (i = 0; i < count; ++i)
    {
       int y_fixed = (y[i] << 20) + (1 << 19); // rounding
@@ -3866,7 +3865,7 @@ static void stbi__YCbCr_to_RGB_row(stbi_uc *out, const stbi_uc *y, const stbi_uc
       int cr = pcr[i] - 128;
       int cb = pcb[i] - 128;
       r = y_fixed + cr * stbi__float2fixed(1.40200f);
-      g = y_fixed + (cr * -stbi__float2fixed(0.71414f)) + ((cb * -stbi__float2fixed(0.34414f)) & 0xffff0000);
+      g = y_fixed + cr * -stbi__float2fixed(0.71414f) + ((cb * -stbi__float2fixed(0.34414f)) & 0xffff0000);
       b = y_fixed + cb * stbi__float2fixed(1.77200f);
       r >>= 20;
       g >>= 20;
