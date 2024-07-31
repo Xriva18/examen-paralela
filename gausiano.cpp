@@ -41,8 +41,4 @@ int main()
     cout << "Uso de memoria máxima (kilobytes): " << usage.ru_maxrss << endl;
 
     return 0;
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> e980a45592819d27047f8eb6e13d21d019cb5b63
