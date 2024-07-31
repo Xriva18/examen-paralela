@@ -1,9 +1,10 @@
 #include <fstream>
 #include <vector>
+#include <omp.h>
 using namespace std;
 /**
  * @author Ing. Ismael Farinango - 2023
- * @details Esta clase contiene funciones de uso comun como inicializar matrices, liberar memoria entre otros
+ * @details Esta clase contiene funciones de uso común como inicializar matrices, liberar memoria, entre otros.
  */
 struct feature
 {
@@ -19,170 +20,83 @@ class Utility
 private:
     /* data */
 public:
-    /**
-     * @brief Inicializa matriz nxm
-     * @param width NUmero de columnas
-     * @param height Numeor de filas
-     * @param value Valor con el que se llena la matriz
-     */
     int **initMatrix(int width, int height, int value = 0);
-    /**
-     * @brief Inicializa matriz nxm
-     * @param width NUmero de columnas
-     * @param height Numeor de filas
-     * @param value Valor con el que se llena la matriz
-     */
     double **initMatrix(int width, int height, double value = 0.0);
-    /**
-     * @brief Inicializa matriz nxm
-     * @param width NUmero de columnas
-     * @param height Numeor de filas
-     * @param value Valor con el que se llena la matriz
-     */
     unsigned char **initMatrix(int width, int height, char value = 0);
-    /**
-     * @brief Libera la memoria de una matriz
-     * @param matrix Matriz a liberar
-     * @param height Numero de filas
-     */
-    void free_memory(int **matrix, int hedight);
-    /**
-     * @brief Libera la memoria de una matriz
-     * @param matrix Matriz a liberar
-     * @param height Numero de filas
-     */
-    void free_memory(double **matrix, int hedight);
-    /**
-     * @brief Libera la memoria de una matriz
-     * @param matrix Matriz a liberar
-     * @param height Numero de filas
-     */
-    void free_memory(unsigned char **matrix, int hedight);
-    /**
-     * @brief Escribe el vector de caracteristicas en archivo SCV.
-     * @param path Ruta del archivo + el nombre del archivo .csv
-     * @param feature Vector de caracteristicas;
-     * @param label Etiqueta de la clase
-     * @param isTrain Parametro para especificar si el vector de caracteristica es de entrenamiento o test.
-     */
+    void free_memory(int **matrix, int height);
+    void free_memory(double **matrix, int height);
+    void free_memory(unsigned char **matrix, int height);
     void writeCsvToSVM(const char *path, vector<int> feature, int label, bool isTrain = false);
     void writeCsvToSVM(const char *path, vector<double> feature, int label, bool isTrain = false);
-    /**
-     * @brief Escribe fichero con el vector de caracteristicas
-     * @param path Ruta del fichero, mas el nombre
-     * @param feature Objeto que contiene la matriz, las filas y columnas, incluye la etiqueta de la clase.
-     */
     void writeCsvToSVM(const char *path, feature feature);
-    /**
-     * @brief Transforma vectos a matriz
-     * @param vect Vector de datos
-     * @param width Columnas de la matriz
-     * @param height Filas de la matriz
-     */
     double **vect2mat(float *vect, int size, int width, int height);
-
-    /**
-     * @brief Escala valores de una matriz a un rango de 0 - 255
-     * @param matrix matriz que contiene los datos a escalar
-     * @param width
-     */
     int **scaleMatrix(double **matrix, int width, int height);
-    /**
-     * @brief Devuelve la suma total de los elementos de un vector.
-     * @param vect Vector
-     */
     double sum(vector<int> vect);
-    /**
-     * @brief Escala los valores de ancho y alto de una imagen tomando como referencia el valor maximo.
-     * @param width Numero de columnas de la imagen
-     * @param height Numero de filas de la imagen
-     * @param maxscale Vallor maximo.
-     */
     void scale(int &width, int &height, int maxscale);
-
     void writeLabel(int label);
-    /**
-     * @brief Escribe las metricas de rendimiento en un fichero
-     */
     void writeMetrics(const std::string fileName, std::vector<std::string> content = {}, std::vector<std::string> header = {});
-
-    /**
-     * @brief Mensaje de informacion
-     */
     void info();
-
     void writeMatrix(const char *filePath, double **matrix, int width, int height);
     void writeMatrix(const char *filePath, int **matrix, int width, int height);
-
-    /**
-     * @brief Retorna el valor maximo de una matriz
-     * @param matrix Matriz de datos.
-     * @param width Numero de columnas
-     * @param height Numero de filas
-    */
-    double getMaxValue(double ** matrix, int width, int height);
-    /**
-     * @brief Transforma una matriz de tipo int** a double**
-     * @param matrix Matriz de datos
-     * @param width NUmero de columnas
-     * @param heigt NUmero de filas
-    */
-    double** int2double(int** matrix, int width, int height);
-    /**
-     * @brief Transforma una matriz de tipo double** a int**
-     * @param matrix Matriz de datos
-     * @param width NUmero de columnas
-     * @param heigt NUmero de filas
-    */
-    int** double2int(double** matrix, int width, int height);
+    double getMaxValue(double **matrix, int width, int height);
+    double **int2double(int **matrix, int width, int height);
+    int **double2int(double **matrix, int width, int height);
 };
 
-double** Utility::int2double(int** matrix, int width, int height){
-    double** newMatrix=initMatrix(width,height,0.0);
-    for(int i=0;i<height; i++){
-        for (size_t j = 0; j < width; j++)
-        {
-            newMatrix[i][j]=static_cast<double>(matrix[i][j]);
-        }
-    }
-    free_memory(matrix,height);
-    return newMatrix;
-}
-
-int** Utility::double2int(double** matrix, int width, int height){
-    int** newMatrix=initMatrix(width,height,0);
-    for(int i=0;i<height; i++){
-        for (size_t j = 0; j < width; j++)
-        {
-            newMatrix[i][j]=static_cast<int>(matrix[i][j]);
-        }
-    }
-    free_memory(matrix,height);
-    return newMatrix;
-}
-
-
-double Utility::getMaxValue(double **matrix, int width, int height){
-    double maxvalue=matrix[0][0];
-    for (size_t i = 0; i < height; i++)
+double **Utility::int2double(int **matrix, int width, int height)
+{
+    double **newMatrix = initMatrix(width, height, 0.0);
+#pragma omp parallel for
+    for (int i = 0; i < height; i++)
     {
-        for (size_t j = 0; j < width; j++)
+        for (int j = 0; j < width; j++)
         {
-            maxvalue=matrix[i][j]>maxvalue?matrix[i][j]:maxvalue;
+            newMatrix[i][j] = static_cast<double>(matrix[i][j]);
         }
-        
+    }
+    free_memory(matrix, height);
+    return newMatrix;
+}
+
+int **Utility::double2int(double **matrix, int width, int height)
+{
+    int **newMatrix = initMatrix(width, height, 0);
+#pragma omp parallel for
+    for (int i = 0; i < height; i++)
+    {
+        for (int j = 0; j < width; j++)
+        {
+            newMatrix[i][j] = static_cast<int>(matrix[i][j]);
+        }
+    }
+    free_memory(matrix, height);
+    return newMatrix;
+}
+
+double Utility::getMaxValue(double **matrix, int width, int height)
+{
+    double maxvalue = matrix[0][0];
+#pragma omp parallel for reduction(max : maxvalue)
+    for (int i = 0; i < height; i++)
+    {
+        for (int j = 0; j < width; j++)
+        {
+            if (matrix[i][j] > maxvalue)
+            {
+                maxvalue = matrix[i][j];
+            }
+        }
     }
     return maxvalue;
-    
 }
 
 void Utility::writeMatrix(const char *filePath, double **matrix, int width, int height)
 {
     ofstream file;
     file.open(filePath);
-    for (size_t i = 0; i < height; i++)
+    for (int i = 0; i < height; i++)
     {
-        for (size_t j = 0; j < width; j++)
+        for (int j = 0; j < width; j++)
         {
             file << matrix[i][j] << ", ";
         }
@@ -195,9 +109,9 @@ void Utility::writeMatrix(const char *filePath, int **matrix, int width, int hei
 {
     ofstream file;
     file.open(filePath);
-    for (size_t i = 0; i < height; i++)
+    for (int i = 0; i < height; i++)
     {
-        for (size_t j = 0; j < width; j++)
+        for (int j = 0; j < width; j++)
         {
             file << matrix[i][j] << ", ";
         }
@@ -211,40 +125,44 @@ void Utility::info()
     printf("The lib-img library has been successfully integrated.\n\n");
 }
 
-void Utility::scale(int &width, int &height, int maxscal)
+void Utility::scale(int &width, int &height, int maxscale)
 {
     float p = 0.0;
     if (height > width)
     {
-        p = (100 * maxscal) / height;
-        height = maxscal;
+        p = (100 * maxscale) / height;
+        height = maxscale;
         width = round(width * (p / 100));
     }
     else if (width > height)
     {
-        p = (100 * maxscal) / width;
-        width = maxscal;
+        p = (100 * maxscale) / width;
+        width = maxscale;
         height = round(height * (p / 100));
     }
     else if (width == height)
     {
-        height = maxscal;
-        width = maxscal;
+        height = maxscale;
+        width = maxscale;
     }
 }
+
 double Utility::sum(vector<int> vect)
 {
     double sum = 0.0;
+#pragma omp parallel for reduction(+ : sum)
     for (int i = 0; i < vect.size(); ++i)
     {
-        sum = sum + vect[i];
+        sum += vect[i];
     }
     return sum;
 }
+
 int **Utility::scaleMatrix(double **matrix, int width, int height)
 {
     float minValue = matrix[0][0];
     float maxValue = matrix[0][0];
+#pragma omp parallel for reduction(min : minValue) reduction(max : maxValue)
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
@@ -254,6 +172,7 @@ int **Utility::scaleMatrix(double **matrix, int width, int height)
         }
     }
     int **result = initMatrix(width, height, 0);
+#pragma omp parallel for
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
@@ -268,6 +187,7 @@ double **Utility::vect2mat(float *vect, int size, int width, int height)
 {
     double **matrix = initMatrix(width, height, 0.0);
     int cont = 0;
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
@@ -283,6 +203,7 @@ double **Utility::vect2mat(float *vect, int size, int width, int height)
 int **Utility::initMatrix(int width, int height, int value)
 {
     int **matrix = new int *[height];
+#pragma omp parallel for
     for (int i = 0; i < height; i++)
     {
         matrix[i] = new int[width];
@@ -297,6 +218,7 @@ int **Utility::initMatrix(int width, int height, int value)
 double **Utility::initMatrix(int width, int height, double value)
 {
     double **matrix = new double *[height];
+#pragma omp parallel for
     for (int i = 0; i < height; i++)
     {
         matrix[i] = new double[width];
@@ -308,23 +230,24 @@ double **Utility::initMatrix(int width, int height, double value)
     return matrix;
 }
 
-unsigned char** Utility::initMatrix(int width, int height, char value){
-    unsigned char** matrix=new unsigned char*[height];
-    for (size_t i = 0; i < height; i++)
+unsigned char **Utility::initMatrix(int width, int height, char value)
+{
+    unsigned char **matrix = new unsigned char *[height];
+#pragma omp parallel for
+    for (int i = 0; i < height; i++)
     {
-        matrix[i]=new unsigned char[width];
-        for (size_t j = 0; j < width; j++)
+        matrix[i] = new unsigned char[width];
+        for (int j = 0; j < width; j++)
         {
-            matrix[i][j]=value;
+            matrix[i][j] = value;
         }
-        
     }
     return matrix;
-    
 }
 
 void Utility::free_memory(int **matrix, int height)
 {
+#pragma omp parallel for
     for (int i = 0; i < height; i++)
     {
         delete[] matrix[i];
@@ -334,6 +257,7 @@ void Utility::free_memory(int **matrix, int height)
 
 void Utility::free_memory(double **matrix, int height)
 {
+#pragma omp parallel for
     for (int i = 0; i < height; i++)
     {
         delete[] matrix[i];
@@ -343,6 +267,7 @@ void Utility::free_memory(double **matrix, int height)
 
 void Utility::free_memory(unsigned char **matrix, int height)
 {
+#pragma omp parallel for
     for (int i = 0; i < height; i++)
     {
         delete[] matrix[i];
@@ -398,6 +323,7 @@ void Utility::writeCsvToSVM(const char *path, vector<int> feature, int label, bo
     file << endl;
     file.close();
 }
+
 void Utility::writeCsvToSVM(const char *path, feature feature)
 {
     ofstream file;
