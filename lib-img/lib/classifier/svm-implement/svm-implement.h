@@ -2,13 +2,14 @@
 #include "./svm/svm.h"
 #include "./svm/svm.cpp"
 #include "./svm/svm-predict.h"
+#include <omp.h> // Incluye OpenMP
+
 /**
  * @author Ing. Ismael Farinango - 2023
  * @details Contiene la implementacion de los clasificadores libsvm.
  */
 class SvmImplement
 {
-private:
 public:
     /**
      * @brief Entrenar modelo svm con los parametros por defecto
@@ -18,7 +19,7 @@ public:
     void svmTrain(const char *featureFile, const char *modelOutFile, double gamma, double C);
 
     /**
-     * @brief Evalua el mmodelo entrenado
+     * @brief Evalua el modelo entrenado
      * @param testFeatureFile ruta del archivo que contiene el vector de caracteristicas
      * @param modelFile ruta del archivo que contiene el modelo
      * @param resultFile ruta donde se va a guaradar los resultados
@@ -28,10 +29,24 @@ public:
 
 void SvmImplement::svmTrain(const char *featureFile, const char *modelOutFile, double gamma, double C)
 {
-    train_model(featureFile, modelOutFile, gamma, C);
+#pragma omp parallel
+    {
+#pragma omp single
+        {
+            // Suponiendo que train_model() se puede ejecutar en paralelo
+            train_model(featureFile, modelOutFile, gamma, C);
+        }
+    }
 }
 
 void SvmImplement::svmTest(const char *testFeatureFile, const char *modelFile, const char *resultFile)
 {
-    evalue(testFeatureFile, modelFile, resultFile);
+#pragma omp parallel
+    {
+#pragma omp single
+        {
+            // Suponiendo que evalue() se puede ejecutar en paralelo
+            evalue(testFeatureFile, modelFile, resultFile);
+        }
+    }
 }
