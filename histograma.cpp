@@ -1,5 +1,6 @@
 #include "./lib-img/lib/lib-include.h"
 #include <chrono>
+#include <omp.h>
 #include <sys/resource.h>
 #include <iostream>
 
