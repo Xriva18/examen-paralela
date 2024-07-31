@@ -37,12 +37,22 @@ static inline double powi(double base, int times)
 {
 	double tmp = base, ret = 1.0;
 
+#pragma omp parallel for
 	for (int t = times; t > 0; t /= 2)
 	{
-		if (t % 2 == 1)
-			ret *= tmp;
-		tmp = tmp * tmp;
+#pragma omp critical
+		{
+			if (t % 2 == 1)
+				ret *= tmp;
+		}
+#pragma omp single
+		{
+			tmp = tmp * tmp;
+		}
 	}
+
+// Asegúrate de sincronizar los resultados correctamente si es necesario
+#pragma omp barrier
 	return ret;
 }
 #define INF HUGE_VAL
@@ -117,6 +127,22 @@ Cache::~Cache()
 	for (head_t *h = lru_head.next; h != &lru_head; h = h->next)
 		free(h->data);
 	free(head);
+
+// Código paralelizado:
+#pragma omp parallel
+	{
+#pragma omp single
+		{
+			for (head_t *h = lru_head.next; h != &lru_head; h = h->next)
+			{
+#pragma omp task firstprivate(h)
+				{
+					free(h->data);
+				}
+			}
+		}
+	}
+	free(head);
 }
 
 void Cache::lru_delete(head_t *h)
@@ -184,20 +210,40 @@ void Cache::swap_index(int i, int j)
 
 	if (i > j)
 		swap2(i, j);
-	for (head_t *h = lru_head.next; h != &lru_head; h = h->next)
+#pragma omp parallel
 	{
-		if (h->len > i)
+#pragma omp single
 		{
-			if (h->len > j)
-				swap2(h->data[i], h->data[j]);
-			else
+			// Identificar el tamaño de la lista para iterar en paralelo
+			int list_size = 0;
+			for (head_t *h = lru_head.next; h != &lru_head; h = h->next)
+				list_size++;
+
+			// Crear una copia local de la lista para acceso en paralelo
+			head_t *local_list[list_size];
+			int index = 0;
+			for (head_t *h = lru_head.next; h != &lru_head; h = h->next)
+				local_list[index++] = h;
+
+#pragma omp for
+			for (int k = 0; k < list_size; k++)
 			{
-				// give up
-				lru_delete(h);
-				free(h->data);
-				size += h->len;
-				h->data = 0;
-				h->len = 0;
+				head_t *h = local_list[k];
+				if (h->len > i)
+				{
+					if (h->len > j)
+						swap2(h->data[i], h->data[j]);
+					else
+					{
+						// give up
+						lru_delete(h);
+						free(h->data);
+#pragma omp atomic
+						size += h->len;
+						h->data = 0;
+						h->len = 0;
+					}
+				}
 			}
 		}
 	}
@@ -300,8 +346,13 @@ Kernel::Kernel(int l, svm_node *const *x_, const svm_parameter &param)
 	if (kernel_type == RBF)
 	{
 		x_square = new double[l];
+
+// Código paralelizado
+#pragma omp parallel for
 		for (int i = 0; i < l; i++)
+		{
 			x_square[i] = dot(x[i], x[i]);
+		}
 	}
 	else
 		x_square = 0;
@@ -501,6 +552,7 @@ void Solver::reconstruct_gradient()
 	int i, j;
 	int nr_free = 0;
 
+	// no se paralelliza
 	for (j = active_size; j < l; j++)
 		G[j] = G_bar[j] + p[j];
 
@@ -523,14 +575,24 @@ void Solver::reconstruct_gradient()
 	}
 	else
 	{
-		for (i = 0; i < active_size; i++)
-			if (is_free(i))
+#pragma omp parallel
+		{
+#pragma omp for
+			for (int i = 0; i < active_size; i++)
 			{
-				const Qfloat *Q_i = Q->get_Q(i, l);
-				double alpha_i = alpha[i];
-				for (j = active_size; j < l; j++)
-					G[j] += alpha_i * Q_i[j];
+				if (is_free(i))
+				{
+					const Qfloat *Q_i = Q->get_Q(i, l);
+					double alpha_i = alpha[i];
+#pragma omp parallel for
+					for (int j = active_size; j < l; j++)
+					{
+#pragma omp atomic
+						G[j] += alpha_i * Q_i[j];
+					}
+				}
 			}
+		}
 	}
 }
 
@@ -569,23 +631,44 @@ void Solver::Solve(int l, const QMatrix &Q, const double *p_, const schar *y_,
 		G = new double[l];
 		G_bar = new double[l];
 		int i;
-		for (i = 0; i < l; i++)
+		// Código paralelizado para el primer bucle
+#pragma omp parallel for
+		for (int i = 0; i < l; i++)
 		{
 			G[i] = p[i];
 			G_bar[i] = 0;
 		}
-		for (i = 0; i < l; i++)
-			if (!is_lower_bound(i))
+
+// Código paralelizado para el segundo bucle
+#pragma omp parallel
+		{
+#pragma omp for
+			for (int i = 0; i < l; i++)
 			{
-				const Qfloat *Q_i = Q.get_Q(i, l);
-				double alpha_i = alpha[i];
-				int j;
-				for (j = 0; j < l; j++)
-					G[j] += alpha_i * Q_i[j];
-				if (is_upper_bound(i))
-					for (j = 0; j < l; j++)
-						G_bar[j] += get_C(i) * Q_i[j];
+				if (!is_lower_bound(i))
+				{
+					const Qfloat *Q_i = Q.get_Q(i, l);
+					double alpha_i = alpha[i];
+
+#pragma omp parallel for
+					for (int j = 0; j < l; j++)
+					{
+#pragma omp atomic
+						G[j] += alpha_i * Q_i[j];
+					}
+
+					if (is_upper_bound(i))
+					{
+#pragma omp parallel for
+						for (int j = 0; j < l; j++)
+						{
+#pragma omp atomic
+							G_bar[j] += get_C(i) * Q_i[j];
+						}
+					}
+				}
 			}
+		}
 	}
 
 	// optimization step
@@ -831,6 +914,7 @@ int Solver::select_working_set(int &out_i, int &out_j)
 	int Gmin_idx = -1;
 	double obj_diff_min = INF;
 
+	// no se apraleliza
 	for (int t = 0; t < active_size; t++)
 		if (y[t] == +1)
 		{
@@ -855,6 +939,7 @@ int Solver::select_working_set(int &out_i, int &out_j)
 	const Qfloat *Q_i = NULL;
 	if (i != -1) // NULL Q_i not accessed: Gmax=-INF if i=-1
 		Q_i = Q->get_Q(i, active_size);
+	// no se apraleliza
 
 	for (int j = 0; j < active_size; j++)
 	{
@@ -943,35 +1028,60 @@ void Solver::do_shrinking()
 	double Gmax2 = -INF; // max { y_i * grad(f)_i | i in I_low(\alpha) }
 
 	// find maximal violating pair first
-	for (i = 0; i < active_size; i++)
+
+	// Inicialización de variables para la paralelización
+	double local_Gmax1 = -std::numeric_limits<double>::infinity();
+	double local_Gmax2 = -std::numeric_limits<double>::infinity();
+
+// Código paralelizado
+#pragma omp parallel
 	{
-		if (y[i] == +1)
+		double private_Gmax1 = -std::numeric_limits<double>::infinity();
+		double private_Gmax2 = -std::numeric_limits<double>::infinity();
+
+#pragma omp for
+		for (int i = 0; i < active_size; i++)
 		{
-			if (!is_upper_bound(i))
+			if (y[i] == +1)
 			{
-				if (-G[i] >= Gmax1)
-					Gmax1 = -G[i];
+				if (!is_upper_bound(i))
+				{
+					if (-G[i] >= private_Gmax1)
+						private_Gmax1 = -G[i];
+				}
+				if (!is_lower_bound(i))
+				{
+					if (G[i] >= private_Gmax2)
+						private_Gmax2 = G[i];
+				}
 			}
-			if (!is_lower_bound(i))
+			else
 			{
-				if (G[i] >= Gmax2)
-					Gmax2 = G[i];
+				if (!is_upper_bound(i))
+				{
+					if (-G[i] >= private_Gmax2)
+						private_Gmax2 = -G[i];
+				}
+				if (!is_lower_bound(i))
+				{
+					if (G[i] >= private_Gmax1)
+						private_Gmax1 = G[i];
+				}
 			}
 		}
-		else
+
+#pragma omp critical
 		{
-			if (!is_upper_bound(i))
-			{
-				if (-G[i] >= Gmax2)
-					Gmax2 = -G[i];
-			}
-			if (!is_lower_bound(i))
-			{
-				if (G[i] >= Gmax1)
-					Gmax1 = G[i];
-			}
+			if (private_Gmax1 > local_Gmax1)
+				local_Gmax1 = private_Gmax1;
+			if (private_Gmax2 > local_Gmax2)
+				local_Gmax2 = private_Gmax2;
 		}
 	}
+
+	// Actualizar las variables globales con el resultado final
+	Gmax1 = local_Gmax1;
+	Gmax2 = local_Gmax2;
 
 	if (unshrink == false && Gmax1 + Gmax2 <= eps * 10)
 	{
@@ -981,20 +1091,46 @@ void Solver::do_shrinking()
 		info("*");
 	}
 
-	for (i = 0; i < active_size; i++)
-		if (be_shrunk(i, Gmax1, Gmax2))
+	// Para evitar condiciones de carrera y sincronización en OpenMP, se usan contadores y banderas
+#pragma omp parallel
+	{
+		// Se usa una bandera para indicar si se ha realizado algún cambio
+		bool change_made = false;
+
+#pragma omp for
+		for (int i = 0; i < active_size; i++)
 		{
-			active_size--;
-			while (active_size > i)
+			if (be_shrunk(i, Gmax1, Gmax2))
 			{
-				if (!be_shrunk(active_size, Gmax1, Gmax2))
+#pragma omp critical
 				{
-					swap_index(i, active_size);
-					break;
+					// Se debe usar una sección crítica para decrementar active_size de forma segura
+					active_size--;
+					change_made = true;
 				}
-				active_size--;
+
+				while (true)
+				{
+#pragma omp critical
+					{
+						if (active_size <= i)
+							break;
+
+						if (!be_shrunk(active_size, Gmax1, Gmax2))
+						{
+							swap_index(i, active_size);
+							change_made = true;
+							break;
+						}
+						active_size--;
+					}
+				}
 			}
 		}
+
+// Opcional: sincronizar después del bucle si se han hecho cambios
+#pragma omp barrier
+	}
 }
 
 double Solver::calculate_rho()
@@ -1080,6 +1216,7 @@ int Solver_NU::select_working_set(int &out_i, int &out_j)
 	int Gmin_idx = -1;
 	double obj_diff_min = INF;
 
+	// nose apraleliza
 	for (int t = 0; t < active_size; t++)
 		if (y[t] == +1)
 		{
@@ -1202,6 +1339,7 @@ void Solver_NU::do_shrinking()
 
 	// find maximal violating pair first
 	int i;
+	// no se paraleliza
 	for (i = 0; i < active_size; i++)
 	{
 		if (!is_upper_bound(i))
@@ -1233,20 +1371,36 @@ void Solver_NU::do_shrinking()
 		active_size = l;
 	}
 
-	for (i = 0; i < active_size; i++)
-		if (be_shrunk(i, Gmax1, Gmax2, Gmax3, Gmax4))
+#pragma omp parallel
+	{
+// Sección crítica para manejar el acceso concurrente a active_size
+#pragma omp single
 		{
-			active_size--;
-			while (active_size > i)
+			int local_active_size = active_size;
+#pragma omp parallel for
+			for (int i = 0; i < local_active_size; i++)
 			{
-				if (!be_shrunk(active_size, Gmax1, Gmax2, Gmax3, Gmax4))
+				if (be_shrunk(i, Gmax1, Gmax2, Gmax3, Gmax4))
 				{
-					swap_index(i, active_size);
-					break;
+// Sección crítica para evitar acceso concurrente a active_size
+#pragma omp critical
+					{
+						local_active_size--;
+						while (local_active_size > i)
+						{
+							if (!be_shrunk(local_active_size, Gmax1, Gmax2, Gmax3, Gmax4))
+							{
+								swap_index(i, local_active_size);
+								break;
+							}
+							local_active_size--;
+						}
+					}
 				}
-				active_size--;
 			}
+			active_size = local_active_size; // Actualizar la variable compartida
 		}
+	}
 }
 
 double Solver_NU::calculate_rho()
@@ -1411,6 +1565,7 @@ public:
 		QD = new double[2 * l];
 		sign = new schar[2 * l];
 		index = new int[2 * l];
+#pragma omp parallel for
 		for (int k = 0; k < l; k++)
 		{
 			sign[k] = 1;
@@ -1489,6 +1644,7 @@ static void solve_c_svc(
 
 	int i;
 
+#pragma omp parallel for
 	for (i = 0; i < l; i++)
 	{
 		alpha[i] = 0;
@@ -1536,17 +1692,30 @@ static void solve_nu_svc(
 	double sum_pos = nu * l / 2;
 	double sum_neg = nu * l / 2;
 
-	for (i = 0; i < l; i++)
-		if (y[i] == +1)
+	// Código previo
+#pragma omp parallel
+	{
+#pragma omp for
+		for (i = 0; i < l; i++)
 		{
-			alpha[i] = min2(1.0, sum_pos);
-			sum_pos -= alpha[i];
+			if (y[i] == +1)
+			{
+#pragma omp critical
+				{
+					alpha[i] = std::min(1.0, sum_pos);
+					sum_pos -= alpha[i];
+				}
+			}
+			else
+			{
+#pragma omp critical
+				{
+					alpha[i] = std::min(1.0, sum_neg);
+					sum_neg -= alpha[i];
+				}
+			}
 		}
-		else
-		{
-			alpha[i] = min2(1.0, sum_neg);
-			sum_neg -= alpha[i];
-		}
+	}
 
 	double *zeros = new double[l];
 
@@ -1614,6 +1783,7 @@ static void solve_epsilon_svr(
 	schar *y = new schar[2 * l];
 	int i;
 
+#pragma omp parallel for
 	for (i = 0; i < l; i++)
 	{
 		alpha2[i] = 0;
@@ -1654,16 +1824,35 @@ static void solve_nu_svr(
 	int i;
 
 	double sum = C * param->nu * l / 2;
-	for (i = 0; i < l; i++)
+	// Código previo
+#pragma omp parallel
 	{
-		alpha2[i] = alpha2[i + l] = min2(sum, C);
-		sum -= alpha2[i];
+#pragma omp single
+		{
+			double local_sum = sum; // Copia local de la variable 'sum'
 
-		linear_term[i] = -prob->y[i];
-		y[i] = 1;
+#pragma omp parallel for
+			for (i = 0; i < l; i++)
+			{
+				alpha2[i] = alpha2[i + l] = std::min(local_sum, C);
 
-		linear_term[i + l] = prob->y[i];
-		y[i + l] = -1;
+#pragma omp critical
+				{
+					local_sum -= alpha2[i];
+				}
+
+				linear_term[i] = -prob->y[i];
+				y[i] = 1;
+
+				linear_term[i + l] = prob->y[i];
+				y[i + l] = -1;
+			}
+
+#pragma omp single
+			{
+				sum = local_sum; // Actualiza la variable 'sum' original
+			}
+		}
 	}
 
 	Solver_NU s;
@@ -1720,21 +1909,36 @@ static decision_function svm_train_one(
 
 	int nSV = 0;
 	int nBSV = 0;
-	for (int i = 0; i < prob->l; i++)
+#pragma omp parallel
 	{
-		if (fabs(alpha[i]) > 0)
+		// Inicializamos las variables locales para cada hilo
+		int local_nSV = 0;
+		int local_nBSV = 0;
+
+#pragma omp for
+		for (int i = 0; i < prob->l; i++)
 		{
-			++nSV;
-			if (prob->y[i] > 0)
+			if (fabs(alpha[i]) > 0)
 			{
-				if (fabs(alpha[i]) >= si.upper_bound_p)
-					++nBSV;
+				local_nSV++;
+				if (prob->y[i] > 0)
+				{
+					if (fabs(alpha[i]) >= si.upper_bound_p)
+						local_nBSV++;
+				}
+				else
+				{
+					if (fabs(alpha[i]) >= si.upper_bound_n)
+						local_nBSV++;
+				}
 			}
-			else
-			{
-				if (fabs(alpha[i]) >= si.upper_bound_n)
-					++nBSV;
-			}
+		}
+
+// Sección crítica para actualizar las variables globales
+#pragma omp critical
+		{
+			nSV += local_nSV;
+			nBSV += local_nBSV;
 		}
 	}
 
@@ -1788,6 +1992,7 @@ static void sigmoid_train(
 		else
 			fval += (t[i] - 1) * fApB + log(1 + exp(fApB));
 	}
+	// nose paraleliza
 	for (iter = 0; iter < max_iter; iter++)
 	{
 		// Update Gradient and Hessian (use H' = H + sigma I)
@@ -1836,13 +2041,20 @@ static void sigmoid_train(
 
 			// New function value
 			newf = 0.0;
-			for (i = 0; i < l; i++)
+			// Código previo
+			double newf = 0.0; // Asegúrate de que esta variable se inicializa antes del bucle
+
+#pragma omp parallel
 			{
-				fApB = dec_values[i] * newA + newB;
-				if (fApB >= 0)
-					newf += t[i] * fApB + log(1 + exp(-fApB));
-				else
-					newf += (t[i] - 1) * fApB + log(1 + exp(fApB));
+#pragma omp for reduction(+ : newf)
+				for (i = 0; i < l; i++)
+				{
+					double fApB = dec_values[i] * newA + newB;
+					if (fApB >= 0)
+						newf += t[i] * fApB + std::log(1 + std::exp(-fApB));
+					else
+						newf += (t[i] - 1) * fApB + std::log(1 + std::exp(fApB));
+				}
 			}
 			// Check sufficient decrease
 			if (newf < fval + 0.0001 * stepsize * gd)
@@ -2076,30 +2288,64 @@ static void svm_group_classes(const svm_problem *prob, int *nr_class_ret, int **
 	int *data_label = Malloc(int, l);
 	int i;
 
-	for (i = 0; i < l; i++)
+	int *local_label = NULL;
+	int *local_count = NULL;
+	int local_nr_class = 0;
+
+#pragma omp parallel
 	{
-		int this_label = (int)prob->y[i];
-		int j;
-		for (j = 0; j < nr_class; j++)
+#pragma omp single
 		{
-			if (this_label == label[j])
+			// Inicialización de variables locales en el entorno paralelo
+			local_label = (int *)malloc(max_nr_class * sizeof(int));
+			local_count = (int *)malloc(max_nr_class * sizeof(int));
+			local_nr_class = nr_class;
+		}
+
+#pragma omp for
+		for (i = 0; i < l; i++)
+		{
+			int this_label = (int)prob->y[i];
+			int j;
+			int found = 0;
+
+			for (j = 0; j < local_nr_class; j++)
 			{
-				++count[j];
-				break;
+				if (this_label == local_label[j])
+				{
+#pragma omp atomic
+					local_count[j]++;
+					found = 1;
+					break;
+				}
+			}
+
+			data_label[i] = j;
+			if (!found)
+			{
+#pragma omp critical
+				{
+					if (local_nr_class == max_nr_class)
+					{
+						max_nr_class *= 2;
+						local_label = (int *)realloc(local_label, max_nr_class * sizeof(int));
+						local_count = (int *)realloc(local_count, max_nr_class * sizeof(int));
+					}
+					local_label[local_nr_class] = this_label;
+					local_count[local_nr_class] = 1;
+					local_nr_class++;
+				}
 			}
 		}
-		data_label[i] = j;
-		if (j == nr_class)
+
+#pragma omp single
 		{
-			if (nr_class == max_nr_class)
-			{
-				max_nr_class *= 2;
-				label = (int *)realloc(label, max_nr_class * sizeof(int));
-				count = (int *)realloc(count, max_nr_class * sizeof(int));
-			}
-			label[nr_class] = this_label;
-			count[nr_class] = 1;
-			++nr_class;
+			// Actualizamos las variables globales desde las locales
+			nr_class = local_nr_class;
+			memcpy(label, local_label, nr_class * sizeof(int));
+			memcpy(count, local_count, nr_class * sizeof(int));
+			free(local_label);
+			free(local_count);
 		}
 	}
 
@@ -2247,15 +2493,18 @@ svm_model *svm_train(const svm_problem *prob, const svm_parameter *param)
 		}
 
 		int p = 0;
+		// Código paralelizado
+#pragma omp parallel for private(j, sub_prob, si, sj, ci, cj, k) shared(x, param, weighted_C, probA, probB, f, nonzero, p) default(none)
 		for (i = 0; i < nr_class; i++)
+		{
 			for (int j = i + 1; j < nr_class; j++)
 			{
 				svm_problem sub_prob;
 				int si = start[i], sj = start[j];
 				int ci = count[i], cj = count[j];
 				sub_prob.l = ci + cj;
-				sub_prob.x = Malloc(svm_node *, sub_prob.l);
-				sub_prob.y = Malloc(double, sub_prob.l);
+				sub_prob.x = (svm_node **)malloc(sub_prob.l * sizeof(svm_node *));
+				sub_prob.y = (double *)malloc(sub_prob.l * sizeof(double));
 				int k;
 				for (k = 0; k < ci; k++)
 				{
@@ -2274,15 +2523,18 @@ svm_model *svm_train(const svm_problem *prob, const svm_parameter *param)
 				f[p] = svm_train_one(&sub_prob, param, weighted_C[i], weighted_C[j]);
 				for (k = 0; k < ci; k++)
 					if (!nonzero[si + k] && fabs(f[p].alpha[k]) > 0)
+#pragma omp critical
 						nonzero[si + k] = true;
 				for (k = 0; k < cj; k++)
 					if (!nonzero[sj + k] && fabs(f[p].alpha[ci + k]) > 0)
+#pragma omp critical
 						nonzero[sj + k] = true;
 				free(sub_prob.x);
 				free(sub_prob.y);
+#pragma omp atomic
 				++p;
 			}
-
+		}
 		// build output
 
 		model->nr_class = nr_class;
@@ -2774,22 +3026,26 @@ int svm_save_model(const char *model_file_name, const svm_model *model)
 	const double *const *sv_coef = model->sv_coef;
 	const svm_node *const *SV = model->SV;
 
+#pragma omp parallel for shared(fp, sv_coef, SV, param, nr_class) default(none)
 	for (int i = 0; i < l; i++)
 	{
-		for (int j = 0; j < nr_class - 1; j++)
-			fprintf(fp, "%.17g ", sv_coef[j][i]);
+#pragma omp critical
+		{
+			for (int j = 0; j < nr_class - 1; j++)
+				fprintf(fp, "%.17g ", sv_coef[j][i]);
 
-		const svm_node *p = SV[i];
+			const svm_node *p = SV[i];
 
-		if (param.kernel_type == PRECOMPUTED)
-			fprintf(fp, "0:%d ", (int)(p->value));
-		else
-			while (p->index != -1)
-			{
-				fprintf(fp, "%d:%.8g ", p->index, p->value);
-				p++;
-			}
-		fprintf(fp, "\n");
+			if (param.kernel_type == PRECOMPUTED)
+				fprintf(fp, "0:%d ", (int)(p->value));
+			else
+				while (p->index != -1)
+				{
+					fprintf(fp, "%d:%.8g ", p->index, p->value);
+					p++;
+				}
+			fprintf(fp, "\n");
+		}
 	}
 
 	setlocale(LC_ALL, old_locale);
@@ -2844,6 +3100,8 @@ bool read_model_header(FILE *fp, svm_model *model)
 	param.weight = NULL;
 
 	char cmd[81];
+
+	// Código paralelizado
 	while (1)
 	{
 		FSCANF(fp, "%80s", cmd);
@@ -2852,11 +3110,15 @@ bool read_model_header(FILE *fp, svm_model *model)
 		{
 			FSCANF(fp, "%80s", cmd);
 			int i;
+#pragma omp parallel for
 			for (i = 0; svm_type_table[i]; i++)
 			{
 				if (strcmp(svm_type_table[i], cmd) == 0)
 				{
-					param.svm_type = i;
+#pragma omp critical
+					{
+						param.svm_type = i;
+					}
 					break;
 				}
 			}
@@ -2870,11 +3132,15 @@ bool read_model_header(FILE *fp, svm_model *model)
 		{
 			FSCANF(fp, "%80s", cmd);
 			int i;
+#pragma omp parallel for
 			for (i = 0; kernel_type_table[i]; i++)
 			{
 				if (strcmp(kernel_type_table[i], cmd) == 0)
 				{
-					param.kernel_type = i;
+#pragma omp critical
+					{
+						param.kernel_type = i;
+					}
 					break;
 				}
 			}
@@ -2898,6 +3164,7 @@ bool read_model_header(FILE *fp, svm_model *model)
 		{
 			int n = model->nr_class * (model->nr_class - 1) / 2;
 			model->rho = Malloc(double, n);
+#pragma omp parallel for
 			for (int i = 0; i < n; i++)
 				FSCANF(fp, "%lf", &model->rho[i]);
 		}
@@ -2905,6 +3172,7 @@ bool read_model_header(FILE *fp, svm_model *model)
 		{
 			int n = model->nr_class;
 			model->label = Malloc(int, n);
+#pragma omp parallel for
 			for (int i = 0; i < n; i++)
 				FSCANF(fp, "%d", &model->label[i]);
 		}
@@ -2912,6 +3180,7 @@ bool read_model_header(FILE *fp, svm_model *model)
 		{
 			int n = model->nr_class * (model->nr_class - 1) / 2;
 			model->probA = Malloc(double, n);
+#pragma omp parallel for
 			for (int i = 0; i < n; i++)
 				FSCANF(fp, "%lf", &model->probA[i]);
 		}
@@ -2919,6 +3188,7 @@ bool read_model_header(FILE *fp, svm_model *model)
 		{
 			int n = model->nr_class * (model->nr_class - 1) / 2;
 			model->probB = Malloc(double, n);
+#pragma omp parallel for
 			for (int i = 0; i < n; i++)
 				FSCANF(fp, "%lf", &model->probB[i]);
 		}
@@ -2926,6 +3196,7 @@ bool read_model_header(FILE *fp, svm_model *model)
 		{
 			int n = model->nr_class;
 			model->nSV = Malloc(int, n);
+#pragma omp parallel for
 			for (int i = 0; i < n; i++)
 				FSCANF(fp, "%d", &model->nSV[i]);
 		}
@@ -3021,6 +3292,7 @@ svm_model *svm_load_model(const char *model_file_name)
 		x_space = Malloc(svm_node, elements);
 
 	int j = 0;
+	// Código previo
 	for (i = 0; i < l; i++)
 	{
 		readline(fp);
@@ -3047,6 +3319,46 @@ svm_model *svm_load_model(const char *model_file_name)
 			++j;
 		}
 		x_space[j++].index = -1;
+	}
+
+// Código paralelizado
+#pragma omp parallel for shared(fp, model, x_space, l, m, j) private(p, endptr, idx, val)
+	for (i = 0; i < l; i++)
+	{
+		char line[1024]; // Asegúrate de que el tamaño sea suficiente para tus datos
+		char *p;
+		char *endptr;
+		char *idx;
+		char *val;
+		int local_j = j; // Copia local para el índice j, evitando problemas de concurrencia
+
+		readline(fp);
+		model->SV[i] = &x_space[local_j];
+
+		p = strtok(line, " \t");
+		model->sv_coef[0][i] = strtod(p, &endptr);
+		for (int k = 1; k < m; k++)
+		{
+			p = strtok(NULL, " \t");
+			model->sv_coef[k][i] = strtod(p, &endptr);
+		}
+
+		while (1)
+		{
+			idx = strtok(NULL, ":");
+			val = strtok(NULL, " \t");
+
+			if (val == NULL)
+				break;
+			x_space[local_j].index = (int)strtol(idx, &endptr, 10);
+			x_space[local_j].value = strtod(val, &endptr);
+
+			++local_j;
+		}
+		x_space[local_j].index = -1;
+
+#pragma omp atomic
+		j = local_j; // Actualiza j de forma atómica
 	}
 	free(line);
 
@@ -3187,27 +3499,38 @@ const char *svm_check_parameter(const svm_problem *prob, const svm_parameter *pa
 		int *count = Malloc(int, max_nr_class);
 
 		int i;
-		for (i = 0; i < l; i++)
+		// Código paralelizado
+#pragma omp parallel shared(prob, nr_class, max_nr_class, label, count) private(i, this_label, j) default(none)
 		{
-			int this_label = (int)prob->y[i];
-			int j;
-			for (j = 0; j < nr_class; j++)
-				if (this_label == label[j])
-				{
-					++count[j];
-					break;
-				}
-			if (j == nr_class)
+#pragma omp for
+			for (i = 0; i < l; i++)
 			{
-				if (nr_class == max_nr_class)
+				int this_label = (int)prob->y[i];
+				int j;
+				int found = 0;
+
+#pragma omp critical
 				{
-					max_nr_class *= 2;
-					label = (int *)realloc(label, max_nr_class * sizeof(int));
-					count = (int *)realloc(count, max_nr_class * sizeof(int));
+					for (j = 0; j < nr_class; j++)
+						if (this_label == label[j])
+						{
+							++count[j];
+							found = 1;
+							break;
+						}
+					if (!found)
+					{
+						if (nr_class == max_nr_class)
+						{
+							max_nr_class *= 2;
+							label = (int *)realloc(label, max_nr_class * sizeof(int));
+							count = (int *)realloc(count, max_nr_class * sizeof(int));
+						}
+						label[nr_class] = this_label;
+						count[nr_class] = 1;
+						++nr_class;
+					}
 				}
-				label[nr_class] = this_label;
-				count[nr_class] = 1;
-				++nr_class;
 			}
 		}
 
